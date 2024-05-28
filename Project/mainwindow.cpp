@@ -10,7 +10,8 @@
 #include<QMediaPlayer>
 #include <QMediaContent>
 #include <QUrl>
-
+#include<QInputDialog>
+#include<QMessageBox>
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),ui(new Ui::MainWindow),timer(new QTimer(this))
 {
@@ -28,14 +29,14 @@ MainWindow::MainWindow(QWidget *parent)
     ui->_table->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->_table, &QTableWidget::customContextMenuRequested, this, &MainWindow::onItemContextMenuRequested);
     AddRow(0);
-    for(int i = 0; i < 4; ++ i){
+    for(int i = 0; i < 5; ++ i){
         AddColumn(i);
     }
     AddItem(0,0,"起始时间");
     AddItem(0,1,"终止时间");
     AddItem(0,2,"事件");
     AddItem(0,3,"地点");
-
+    AddItem(0,4,"备注");
     files.getNodes(QString("../Project/nodes.csv"));
 
     qDebug() << "修改之前";
@@ -246,10 +247,74 @@ void MainWindow::onItemContextMenuRequested(const QPoint& pos) {
         connect(actioncancel, &QAction::triggered, [this, selectedItem]() {
             onActioncancelTriggered(selectedItem);
         });
+        QAction* actionrevise = menu->addAction("修改");
+        connect(actionrevise, &QAction::triggered, [this, selectedItem,pos]() {
+            onActionreviseTriggered(selectedItem);
+        });
         // 添加更多菜单项...
 
         // 显示右键菜单
         menu->exec(QCursor::pos());
+    }
+}
+
+void MainWindow::onActionreviseTriggered(QTableWidgetItem *item){
+    int row=item->row();
+    int col=item->column();
+    if(col==0){
+        QDialog *dialogrevise=new QDialog(this);
+        QHBoxLayout* layout = new QHBoxLayout(dialogrevise);
+        QPushButton* saveButton=new QPushButton("Save");
+        layout->addWidget(saveButton);
+        QTimeEdit* timeEdit=new QTimeEdit;
+        layout->addWidget(timeEdit);
+        connect(saveButton, &QPushButton::clicked, this, [=]() {
+            (activities.begin()+row-1)->begin=timeEdit->time();
+            dialogrevise->close();
+        });
+        dialogrevise->exec();
+        SortEvent();
+        }
+    if(col==1){
+        QDialog *dialogrevise=new QDialog(this);
+        QHBoxLayout* layout = new QHBoxLayout(dialogrevise);
+        QPushButton* saveButton=new QPushButton("Save");
+        QTimeEdit* timeEdit=new QTimeEdit;
+        layout->addWidget(saveButton);
+        layout->addWidget(timeEdit);
+        connect(saveButton, &QPushButton::clicked, this, [=]() {
+            (activities.begin()+row-1)->end=timeEdit->time();
+            dialogrevise->close();
+        });
+        dialogrevise->exec();
+        SortEvent();
+        }
+    if(col==2){
+        bool ok;
+        QString text = QInputDialog::getText(nullptr, "Enter Text", "Please enter some text:", QLineEdit::Normal, "", &ok);
+
+            if (ok && !text.isEmpty()) {
+                activities[row-1].Sname=text;
+                SortEvent();
+            }
+    }
+    if(col==3){
+        QComboBox* locationEdit = new QComboBox(ui->_table);
+        for(auto nm:files.nameTint.keys()){
+            locationEdit->addItem(nm);
+        }
+        QDialog *dialogrevise=new QDialog(this);
+        QVBoxLayout* layout = new QVBoxLayout(dialogrevise);
+        QPushButton* saveButton=new QPushButton("Save");
+        layout->addWidget(saveButton);
+        layout->addWidget(locationEdit);
+        connect(saveButton, &QPushButton::clicked, this, [=]() {
+            (activities.begin()+row-1)->Sposition=locationEdit->currentText();
+            dialogrevise->close();
+        });
+        dialogrevise->exec();
+        activities[row-1].iposition=files.nameTint[activities[row-1].Sposition];
+        SortEvent();
     }
 }
 
@@ -301,7 +366,10 @@ void MainWindow::onActionaddTriggered(){
             h.begin=stime;
             h.end=etime;
             h.iposition=files.nameTint[location];
-            InsertEvent(h);
+            if(Whetherclash(h.begin,h.end)){
+                  InsertEvent(h);
+            }
+
 
             dialogadd->close();
         });
@@ -317,6 +385,29 @@ void MainWindow::onActioncancelTriggered(QTableWidgetItem *item){
         }
     }
 }
+
+bool MainWindow::Whetherclash(QTime begin,QTime end){
+    for(auto it=activities.begin();it!=activities.end();it++){
+        if((it->end>begin and it->begin<begin) or (it->begin<end and it->end>end)){
+            QMessageBox msgBox(QMessageBox::Warning, "事件时间冲突", "该事件时间发生冲突,暂时不能给你明确的答复,请你自己衡量。", QMessageBox::NoButton, this);
+             msgBox.setIcon(QMessageBox::Warning);
+            QPushButton* continueButton = msgBox.addButton("继续添加", QMessageBox::AcceptRole);
+            QPushButton* discardButton = msgBox.addButton("放弃", QMessageBox::RejectRole);
+            msgBox.exec();
+
+                if (msgBox.clickedButton() == continueButton) {
+                    return 1; // 继续添加
+                } else if (msgBox.clickedButton() == discardButton) {
+                    return 0; // 放弃
+                }
+
+                return -1; // 未点击任何按钮
+            break;
+        }
+    }
+    return 1;
+}
+
 void MainWindow::Personalize(){
     configs->show();
 }
